@@ -21,7 +21,15 @@ const userSchema = mongoose.Schema({
         required: true,
         trim: true,
         minlength: 3
-    }
+    },
+    followers: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    followings: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }]
 }, { timestamps: true });
 
 // Hash password before saving
