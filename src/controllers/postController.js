@@ -31,8 +31,6 @@ const getAllPosts = async (req, res) => {
     }catch(error){
         res.status(500).json({message: 'Server Error'});
     }
-
-    res.status(200).json({message: 'Get all posts'});
 }
 
 // @desc Get a post
@@ -86,10 +84,37 @@ const deletePost = async (req, res) => {
     res.status(200).json({message: 'Delete posts'});
 }
 
+const toggleLike = async (req, res) => {
+    const postId = req.params.id;
+    const userId = req.user.id;
+
+    try{
+
+        const post = await Post.findById(postId);
+        if(!post) return res(404).json({message: 'Post not found'});
+
+        const liked = post.likes.includes(userId);
+
+        if(liked){
+            post.likes = post.likes.filter(id => id.toString() !== userId.toString());
+            await post.save();
+            return res.status(200).json({message: 'Post Unliked'});
+        }
+        
+        post.likes.push(userId);
+        await post.save();
+        return res.status(200).json({message: 'Post Liked'});
+
+    }catch(error){
+        res.status(500).json({message: 'Server Error'});
+    }
+}
+
 module.exports = {
     createPost,
     getAllPosts,
     getPostById,
     updatePost,
-    deletePost
+    deletePost,
+    toggleLike,
 }
