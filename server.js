@@ -4,6 +4,7 @@ const cookieParser = require('cookie-parser');
 const connectDB = require('./backend/config/db');
 const authRoutes = require('./backend/routes/authRoutes');
 const userRoutes = require('./backend/routes/userRoutes');
+const profileRoutes = require('./backend/routes/profileRoutes');
 const errorHandler = require('./backend/middlewares/errorMiddleware');
 
 dotenv.config();
@@ -16,6 +17,8 @@ app.use(cookieParser());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/uploads', express.static('uploads'));
 app.use(errorHandler);
 
 // Start server after DB connection
