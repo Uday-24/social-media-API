@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./backend/config/db');
 const authRoutes = require('./backend/routes/authRoutes');
+const errorHandler = require('./backend/middlewares/errorMiddleware');
 
 dotenv.config();
 const app = express();
@@ -13,6 +14,7 @@ app.use(cookieParser());
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use(errorHandler);
 
 // Start server after DB connection
 const PORT = process.env.PORT || 5000;
