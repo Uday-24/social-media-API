@@ -20,7 +20,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/uploads', express.static('uploads'));
-app.use('/follow', express.static('followRoutes'));
+app.use('/api/follow', followRoutes);
 app.use(errorHandler);
 
 // Start server after DB connection
