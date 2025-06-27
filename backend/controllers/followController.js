@@ -1,6 +1,6 @@
 const Profile = require('../models/Profile');
 const FollowRequest = require('../models/FollowRequest');
-const User = require('../models/User');
+const AppError = require('../utils/AppError');
 
 /**
  * @desc    Follow a user (or send follow request if user is private)
@@ -65,13 +65,26 @@ exports.unfollowUser = async (req, res) => {
   const fromUserId = req.user._id;
   const toUserId = req.params.id;
 
-  const fromProfile = await Profile.findOne({ user: fromUserId });
-  const toProfile = await Profile.findOne({ user: toUserId });
-
-  if (!fromProfile || !toProfile) {
-    return res.status(404).json({ message: 'Profile not found' });
+  // Check if trying to unfollow self
+  if (fromUserId.toString() === toUserId) {
+    throw new AppError("You can't unfollow yourself", 400);
   }
 
+  const [fromProfile, toProfile] = await Promise.all([
+    Profile.findOne({ user: fromUserId }),
+    Profile.findOne({ user: toUserId }),
+  ]);
+
+  if (!fromProfile || !toProfile) {
+    throw new AppError('Profile not found', 404);
+  }
+
+  const isFollowing = fromProfile.following.includes(toUserId);
+  if (!isFollowing) {
+    throw new AppError('You are not following this user', 400);
+  }
+
+  // Remove from following/followers
   fromProfile.following = fromProfile.following.filter(
     (uid) => uid.toString() !== toUserId
   );
@@ -79,13 +92,13 @@ exports.unfollowUser = async (req, res) => {
     (uid) => uid.toString() !== fromUserId
   );
 
+  // Update counts safely
   fromProfile.followingCount = Math.max(fromProfile.followingCount - 1, 0);
   toProfile.followersCount = Math.max(toProfile.followersCount - 1, 0);
 
-  await fromProfile.save();
-  await toProfile.save();
+  await Promise.all([fromProfile.save(), toProfile.save()]);
 
-  return res.status(200).json({ message: 'Unfollowed successfully' });
+  res.status(200).json({ message: 'Unfollowed successfully' });
 };
 
 /**
@@ -98,36 +111,60 @@ exports.respondToFollowRequest = async (req, res) => {
   const { requestId } = req.params;
   const { action } = req.body; // 'accept' or 'decline'
 
+  if (!['accept', 'decline'].includes(action)) {
+    throw new AppError('Invalid action. Must be "accept" or "decline".', 400);
+  }
+
   const request = await FollowRequest.findById(requestId);
-  if (!request || request.to.toString() !== userId) {
-    return res.status(404).json({ message: 'Follow request not found' });
+  if (!request) {
+    throw new AppError('Follow request not found', 404);
+  }
+
+  if (request.to.toString() !== userId.toString()) {
+    throw new AppError('You are not authorized to respond to this request', 403);
+  }
+
+  if (request.status !== 'pending') {
+    throw new AppError(`Request has already been ${request.status}`, 400);
   }
 
   if (action === 'accept') {
-    const fromProfile = await Profile.findOne({ user: request.from });
-    const toProfile = await Profile.findOne({ user: request.to });
+    const [fromProfile, toProfile] = await Promise.all([
+      Profile.findOne({ user: request.from }),
+      Profile.findOne({ user: request.to }),
+    ]);
 
-    fromProfile.following.push(request.to);
-    toProfile.followers.push(request.from);
+    if (!fromProfile || !toProfile) {
+      throw new AppError('One or both user profiles not found', 404);
+    }
 
-    fromProfile.followingCount++;
-    toProfile.followersCount++;
+    // Avoid duplicate entries
+    if (!fromProfile.following.includes(userId)) {
+      fromProfile.following.push(userId);
+      fromProfile.followingCount++;
+    }
 
-    await fromProfile.save();
-    await toProfile.save();
+    if (!toProfile.followers.includes(request.from)) {
+      toProfile.followers.push(request.from);
+      toProfile.followersCount++;
+    }
 
     request.status = 'accepted';
-    await request.save();
+
+    await Promise.all([
+      fromProfile.save(),
+      toProfile.save(),
+      request.save()
+    ]);
 
     return res.status(200).json({ message: 'Follow request accepted' });
-  } else if (action === 'decline') {
-    request.status = 'declined';
-    await request.save();
-
-    return res.status(200).json({ message: 'Follow request declined' });
-  } else {
-    return res.status(400).json({ message: 'Invalid action' });
   }
+
+  // If action is 'decline'
+  request.status = 'declined';
+  await request.save();
+
+  return res.status(200).json({ message: 'Follow request declined' });
 };
 
 /**
@@ -136,6 +173,16 @@ exports.respondToFollowRequest = async (req, res) => {
  * @access  Private
  */
 exports.getPendingRequests = async (req, res) => {
+  const profile = await Profile.findOne({ user: req.user._id });
+
+  if (!profile) {
+    throw new AppError('Profile not found', 404);
+  }
+
+  if (!profile.isPrivate) {
+    throw new AppError('Only private accounts can have follow requests', 400);
+  }
+
   const requests = await FollowRequest.find({
     to: req.user._id,
     status: 'pending',
