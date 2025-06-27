@@ -39,6 +39,10 @@ exports.register = async (req, res) => {
   res.status(201).json({
     success: true,
     message: "Registration successful",
+    user: {
+      userId: user._id,
+      username: user.username,
+    }
   });
 };
 
