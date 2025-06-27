@@ -1,6 +1,8 @@
 const Profile = require('../models/Profile');
+const FollowRequest = require('../models/FollowRequest');
 const sharp = require('sharp');
 const path = require('path');
+const AppError = require('../utils/AppError');
 
 // Helper to save avatar image
 const saveAvatar = async (buffer, userId) => {
@@ -15,78 +17,94 @@ const saveAvatar = async (buffer, userId) => {
   return `/uploads/${filename}`;
 };
 
-// PUT /api/profile
-exports.updateProfile = async (req, res, next) => {
-  try {
-    const userId = req.user._id;
+/**
+ * @desc    Update logged-in user's profile
+ * @route   PUT /api/profile
+ * @access  Private
+ */
+exports.updateProfile = async (req, res) => {
+  const userId = req.user._id;
 
-    const {
-      name,
-      bio,
-      location,
-      isPrivate,
-      interests,
-      gender,
-      dob,
-    } = req.body;
+  const {
+    name,
+    bio,
+    location,
+    isPrivate,
+    interests,
+    gender,
+    dob,
+  } = req.body;
 
-    const profile = await Profile.findOne({ user: userId });
+  const profile = await Profile.findOne({ user: userId });
+  if (!profile) {
+    throw new AppError('Profile not found', 404);
+  }
 
-    if (!profile) {
-      return res.status(404).json({ message: 'Profile not found' });
-    }
+  const wasPrivate = profile.isPrivate;
 
-    if (req.file) {
-      // Save avatar
-      const avatarPath = await saveAvatar(req.file.buffer, userId);
-      profile.avatar = avatarPath;
-    }
+  // Update fields
+  if (req.file) {
+    const avatarPath = await saveAvatar(req.file.buffer, userId);
+    profile.avatar = avatarPath;
+  }
+  if (name !== undefined) profile.name = name;
+  if (bio !== undefined) profile.bio = bio;
+  if (location !== undefined) profile.location = location;
+  if (isPrivate !== undefined) profile.isPrivate = isPrivate;
+  if (interests !== undefined)
+    profile.interests = Array.isArray(interests) ? interests : interests.split(',');
+  if (gender !== undefined) profile.gender = gender;
+  if (dob !== undefined) profile.dob = new Date(dob);
 
-    if (name !== undefined) {
-        profile.name = name;
-    }
-    if (bio !== undefined) {
-        profile.bio = bio;
-    }
-    if (location !== undefined) {
-        profile.location = location;
-    }
-    if (isPrivate !== undefined) {
-        profile.isPrivate = isPrivate;
-    }
-    if (interests !== undefined) {
-        profile.interests = Array.isArray(interests) ? interests : interests.split(',');
-    }
-    if (gender !== undefined) {
-        profile.gender = gender;
-    }
-    if (dob !== undefined) {
-        profile.dob = new Date(dob);
+  await profile.save();
+
+  // Auto-accept follow requests if changing from private to public
+  if (wasPrivate && isPrivate === false) {
+    const pendingRequests = await FollowRequest.find({
+      to: userId,
+      status: 'pending',
+    });
+
+    for (const request of pendingRequests) {
+      const followerProfile = await Profile.findOne({ user: request.from });
+
+      if (followerProfile && !followerProfile.following.includes(userId)) {
+        followerProfile.following.push(userId);
+        followerProfile.followingCount++;
+        await followerProfile.save();
+      }
+
+      if (!profile.followers.includes(request.from)) {
+        profile.followers.push(request.from);
+        profile.followersCount++;
+      }
+
+      request.status = 'accepted';
+      await request.save();
     }
 
     await profile.save();
-
-    res.status(200).json({ message: 'Profile updated', profile });
-  } catch (error) {
-    next(error);
   }
+
+  res.status(200).json({ message: 'Profile updated', profile });
 };
 
-exports.getMyProfile = async (req, res, next) => {
-  try {
-    const profile = await Profile.findOne({ user: req.user._id })
-      .populate('user', 'username email') // get username/email from User
-      .populate('blockedUsers', 'username');
+/**
+ * @desc    Get the logged-in user's profile
+ * @route   GET /api/profile/me
+ * @access  Private
+ */
+exports.getMyProfile = async (req, res) => {
+  const profile = await Profile.findOne({ user: req.user._id })
+    .populate('user', 'username email')
+    .populate('blockedUsers', 'username');
 
-    if (!profile) {
-      return res.status(404).json({ message: 'Profile not found' });
-    }
-
-    res.status(200).json({
-      success: true,
-      profile
-    });
-  } catch (error) {
-    next(error);
+  if (!profile) {
+    throw new AppError('Profile not found', 404);
   }
+
+  res.status(200).json({
+    success: true,
+    profile,
+  });
 };
