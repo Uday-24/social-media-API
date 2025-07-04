@@ -43,7 +43,6 @@ exports.updateProfile = async (req, res) => {
 
   const wasPrivate = profile.isPrivate;
 
-  // Update fields
   if (req.file) {
     const avatarPath = await saveAvatar(req.file.buffer, userId);
     profile.avatar = avatarPath;
@@ -57,7 +56,6 @@ exports.updateProfile = async (req, res) => {
   if (gender !== undefined) profile.gender = gender;
   if (dob !== undefined) profile.dob = new Date(dob);
 
-  // Auto-accept follow requests if changing from private to public
   if (wasPrivate && isPrivate === false) {
     const pendingRequests = await FollowRequest.find({
       to: userId,
@@ -81,13 +79,18 @@ exports.updateProfile = async (req, res) => {
       request.status = 'accepted';
       await request.save();
     }
-
   }
 
   await profile.save();
-  await redis.set(`profile:${req.user._id}`, updatedProfile.toObject(), 1800);
 
-  res.status(200).json({ message: 'Profile updated', profile });
+  // Repopulate for cache consistency
+  const populatedProfile = await Profile.findOne({ user: userId })
+    .populate('user', 'username email')
+    .populate('blockedUsers', 'username');
+
+  await redis.set(`profile:${req.user._id}`, populatedProfile.toObject(), 1800);
+
+  res.status(200).json({ message: 'Profile updated', profile: populatedProfile });
 };
 
 /**
