@@ -132,3 +132,74 @@ exports.getMyProfile = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
+
+
+/**
+ * @desc    Get another user's profile by user ID
+ * @route   GET /api/profile/user/:id
+ * @access  Private
+ */
+exports.getUserProfile = async (req, res) => {
+  const viewerId = req.user._id;
+  const targetUserId = req.params.userId;
+  const cacheKey = `profile:${targetUserId}`;
+
+  try {
+    // 1. Load from Redis or DB
+    let profile = await redisService.get(cacheKey);
+    let source = 'cache';
+
+    if (!profile) {
+      // Fallback to DB
+      const profileDoc = await Profile.findOne({ user: targetUserId })
+        .populate('user', 'username email')
+        .populate('blockedUsers', 'username')
+        .lean(); // plain JS object
+
+      if (!profileDoc) {
+        return res.status(404).json({ success: false, message: 'Profile not found' });
+      }
+
+      profile = profileDoc;
+
+      // Cache the full profile
+      await redisService.set(cacheKey, profile, 1800); // 30 min
+      source = 'db';
+    }
+
+    // 2. Check access
+    const isOwner = viewerId === profile.user._id.toString();
+    const isFollower = profile.followers?.some(
+      (id) => id.toString() === viewerId
+    );
+    const hasAccess = !profile.isPrivate || isOwner || isFollower;
+
+    // 3. Return limited or full profile
+    if (!hasAccess) {
+      return res.status(200).json({
+        success: true,
+        profile: {
+          name: profile.name,
+          avatar: profile.avatar,
+          bio: profile.bio,
+          isPrivate: true
+        },
+        source
+      });
+    }
+
+    // 4. Return full profile
+    return res.status(200).json({
+      success: true,
+      profile,
+      source
+    });
+
+  } catch (err) {
+    console.error('Error in getUserProfile:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Server Error'
+    });
+  }
+};

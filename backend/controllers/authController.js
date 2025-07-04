@@ -107,17 +107,43 @@ exports.refreshToken = async (req, res) => {
     throw new AppError("No refresh token provided", 401);
   }
 
-  const payload = jwt.verify(token, REFRESH_SECRET);
-  const user = await User.findById(payload.userId);
-
-  if (!user || user.refreshToken !== token) {
+  let payload;
+  try {
+    payload = jwt.verify(token, REFRESH_SECRET);
+  } catch (err) {
     throw new AppError("Invalid refresh token", 403);
   }
 
+  const user = await User.findById(payload.userId);
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  // Detect token reuse
+  if (user.refreshToken !== token) {
+    user.refreshToken = null;
+    await user.save();
+    throw new AppError("Token reuse detected", 403);
+  }
+
+  // Rotate tokens
   const newAccessToken = generateAccessToken(user._id);
+  const newRefreshToken = generateRefreshToken(user._id);
+
+  user.refreshToken = newRefreshToken;
+  await user.save();
+
+  // Set new refresh token in cookie
+  res.cookie('refreshToken', newRefreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
 
   res.status(200).json({ success: true, accessToken: newAccessToken });
 };
+
 
 /**
  * @desc    Logout user and clear refresh token

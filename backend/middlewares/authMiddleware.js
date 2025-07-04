@@ -22,11 +22,19 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, ACCESS_SECRET);
 
     // Attach user to request object
-    req.user = await User.findById(decoded.userId).select('-password -refreshToken');
+    const user = await User.findById(decoded.userId).select('-password -refreshToken');
 
-    if (!req.user) {
+    if (!user) {
       return res.status(401).json({ success: false, message: 'User not found' });
     }
+
+    req.user = {
+      _id: user._id.toString(),
+      username: user.username,
+      email: user.email,
+      role: user.role
+    };
+
 
     next(); // continue to route/controller
   } catch (error) {
