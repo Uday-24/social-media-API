@@ -1,0 +1,55 @@
+services:
+  backend:
+    build: .
+    image: sociapi/backend:latest
+    container_name: sociapi_backend
+    ports:
+      - '5000:5000'
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+      - redis-stack
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  mongo:
+    image: mongo
+    container_name: sociapi_mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+
+  mongo-express:
+    image: mongo-express
+    container_name: sociapi_mongo_express
+    restart: always
+    ports:
+      - '8081:8081'
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      - ME_CONFIG_BASICAUTH=false
+    depends_on:
+      - mongo
+
+  # redis:
+  #   image: redis:latest
+  #   container_name: sociapi_redis
+  #   ports:
+  #     - '6379:6379'
+
+  redis-stack:
+    image: redis/redis-stack:latest
+    container_name: sociapi_redis_stack
+    ports:
+      - '8001:8001'  # RedisInsight UI (if needed)
+      - '6379:6379'  # Optional secondary redis port for testing
+    # depends_on:
+    #   - redis
+
+volumes:
+  mongo_data:

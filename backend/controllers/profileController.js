@@ -3,6 +3,7 @@ const FollowRequest = require('../models/FollowRequest');
 const sharp = require('sharp');
 const path = require('path');
 const AppError = require('../utils/AppError');
+const redis = require('../services/redisService');
 
 // Helper to save avatar image
 const saveAvatar = async (buffer, userId) => {
@@ -56,8 +57,6 @@ exports.updateProfile = async (req, res) => {
   if (gender !== undefined) profile.gender = gender;
   if (dob !== undefined) profile.dob = new Date(dob);
 
-  await profile.save();
-
   // Auto-accept follow requests if changing from private to public
   if (wasPrivate && isPrivate === false) {
     const pendingRequests = await FollowRequest.find({
@@ -83,8 +82,10 @@ exports.updateProfile = async (req, res) => {
       await request.save();
     }
 
-    await profile.save();
   }
+
+  await profile.save();
+  await redis.set(`profile:${req.user._id}`, updatedProfile.toObject(), 1800);
 
   res.status(200).json({ message: 'Profile updated', profile });
 };
@@ -95,16 +96,36 @@ exports.updateProfile = async (req, res) => {
  * @access  Private
  */
 exports.getMyProfile = async (req, res) => {
-  const profile = await Profile.findOne({ user: req.user._id })
-    .populate('user', 'username email')
-    .populate('blockedUsers', 'username');
+  const cacheKey = `profile:${req.user._id}`;
 
-  if (!profile) {
-    throw new AppError('Profile not found', 404);
+  try {
+    // Try from Redis
+    const cacheProfile = await redis.get(cacheKey);
+    if (cacheProfile) {
+      return res.status(200).json({
+        success: true,
+        profile: cacheProfile
+      });
+    }
+
+    // Fallback to DB
+    const profile = await Profile.findOne({ user: req.user._id })
+      .populate('user', 'username email')
+      .populate('blockedUsers', 'username');
+
+    if (!profile) {
+      throw new AppError('Profile not found', 404);
+    }
+
+    // Convert to plain object before caching
+    await redis.set(cacheKey, profile.toObject(), 1800);
+
+    res.status(200).json({
+      success: true,
+      profile,
+    });
+  } catch (err) {
+    console.error('Error in getMyProfile:', err);
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
-
-  res.status(200).json({
-    success: true,
-    profile,
-  });
 };
