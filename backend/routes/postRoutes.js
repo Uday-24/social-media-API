@@ -4,10 +4,16 @@ const upload = require('../utils/multer');
 const protect = require('../middlewares/authMiddleware');
 const { postValidation } = require('../validators/postValidation');
 const validateRequest = require('../middlewares/validateRequest');
-const { createPost } = require('../controllers/postController');
+const { createPost, editPost, deletePost } = require('../controllers/postController');
 
 // Create a new post
 router.post('/', protect, upload.array('media', 10), postValidation, validateRequest, createPost);
+
+// Update post
+router.patch('/:postId', protect, editPost);
+
+// Delete post
+router.delete('/:postId', protect, deletePost);
 
 // Get all posts (explore or feed with pagination)
 // router.get('/', postController.getAllPosts);
@@ -15,11 +21,7 @@ router.post('/', protect, upload.array('media', 10), postValidation, validateReq
 // // Get single post by ID
 // router.get('/:id', postController.getPostById);
 
-// // Update post
-// router.put('/:id', protect, postController.updatePost);
 
-// // Delete post
-// router.delete('/:id', protect, postController.deletePost);
 
 // // Like / Unlike post
 // router.put('/:id/like', protect, postController.toggleLike);

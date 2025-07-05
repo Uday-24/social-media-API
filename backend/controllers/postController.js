@@ -59,7 +59,49 @@ exports.createPost = async (req, res) => {
 };
 
 
+exports.editPost = async (req, res) => {
+  const userId = req.user._id;
+  const { postId } = req.params;
+  const { content } = req.body;
 
+  if (!content || content.trim() === '') {
+    throw new AppError('Content is required to update', 400);
+  }
+
+  const updatedPost = await Post.findOneAndUpdate(
+    { _id: postId, user: userId },
+    { content },
+    { new: true } // return the updated post
+  );
+
+  if (!updatedPost) {
+    throw new AppError('Post not found or you are not authorized to edit it', 404);
+  }
+
+  res.status(200).json({
+    message: 'Post content updated successfully',
+    post: updatedPost,
+  });
+};
+
+
+exports.deletePost = async (req, res) => {
+  const userId = req.user._id;
+  const {postId} = req.params;
+
+  const deletedPost = await Post.findOneAndDelete({
+    _id: postId,
+    user: userId, // ensures only the owner can delete
+  });
+
+  if (!deletedPost) {
+    throw new AppError('Post not found or you are not authorized to delete it', 404);
+  }
+
+  res.status(200).json({
+    message: 'Post deleted successfully',
+  });
+};
 // @desc    Get all posts (explore/feed)
 // @route   GET /api/posts
 // @access  Public
