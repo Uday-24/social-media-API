@@ -1,7 +1,9 @@
 const { saveMedia } = require('../utils/saveMedia');
 const AppError = require('../utils/AppError');
+const canViewPrivateContent = require('../utils/canViewPrivateContent');
 const Post = require('../models/Post');
 const Hashtag = require('../models/Hashtag');
+const Profile = require('../models/Profile');
 
 // @desc    Create a new post
 // @route   POST /api/posts
@@ -14,7 +16,7 @@ exports.createPost = async (req, res) => {
 
   if (hashtags && hashtags.length > 0) {
     for (let tag of hashtags) {
-      tag = tag.toLowerCase(); // normalize
+      tag = tag.toLowerCase();
 
       let existing = await Hashtag.findOne({ name: tag });
 
@@ -87,7 +89,7 @@ exports.editPost = async (req, res) => {
 
 exports.deletePost = async (req, res) => {
   const userId = req.user._id;
-  const {postId} = req.params;
+  const { postId } = req.params;
 
   const deletedPost = await Post.findOneAndDelete({
     _id: postId,
@@ -102,6 +104,36 @@ exports.deletePost = async (req, res) => {
     message: 'Post deleted successfully',
   });
 };
+
+
+exports.getPostById = async (req, res) => {
+  const { postId } = req.params;
+  const currentUserId = req.user._id; // may be null if not logged in
+
+  // 1. Fetch the post
+  const post = await Post.findById(postId)
+    .populate('user', 'username') // basic user info
+    .populate('tags', 'username');
+
+  if (!post) {
+    throw new AppError('Post not found', 404);
+  }
+
+  // 2. Fetch the owner's profile
+  const ownerProfile = await Profile.findOne({ user: post.user._id }).select('isPrivate followers user');
+  if (!ownerProfile) {
+    throw new AppError('Profile not found for this post owner', 404);
+  }
+  
+  // 3. Privacy check
+  const canView = canViewPrivateContent(ownerProfile, currentUserId);
+  if (!canView) {
+    throw new AppError('You are not authorized to view this post', 403);
+  }
+
+  res.status(200).json({ post });
+};
+
 // @desc    Get all posts (explore/feed)
 // @route   GET /api/posts
 // @access  Public
