@@ -6,14 +6,13 @@ const AppError = require('./AppError'); // optional if you use custom error hand
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname).toLowerCase();
-  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.mp4'];
-
-  if (allowedExtensions.includes(ext)) {
+  const allowedMimetypes = ['image/jpeg', 'image/png', 'video/mp4'];
+  if (allowedMimetypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Only .jpg, .jpeg, .png images or .mp4 videos are allowed'));
+    cb(new Error('Only JPEG/PNG images or MP4 videos are allowed'));
   }
+
 };
 
 const upload = multer({
