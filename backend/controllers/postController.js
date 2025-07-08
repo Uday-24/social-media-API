@@ -4,6 +4,7 @@ const canViewPrivateContent = require('../utils/canViewPrivateContent');
 const Post = require('../models/Post');
 const Hashtag = require('../models/Hashtag');
 const Profile = require('../models/Profile');
+const paginateCursor = require('../utils/paginateCursor');
 
 // @desc    Create a new post
 // @route   POST /api/posts
@@ -124,7 +125,7 @@ exports.getPostById = async (req, res) => {
   if (!ownerProfile) {
     throw new AppError('Profile not found for this post owner', 404);
   }
-  
+
   // 3. Privacy check
   const canView = canViewPrivateContent(ownerProfile, currentUserId);
   if (!canView) {
@@ -133,6 +134,59 @@ exports.getPostById = async (req, res) => {
 
   res.status(200).json({ post });
 };
+
+
+exports.getPostsByUser = async (req, res) => {
+  const targetUserId = req.params.userId;
+  const currentUserId = req.user?._id || null;
+
+  const targetProfile = await Profile.findOne({ user: targetUserId }).select('isPrivate followers user');
+  if (!targetProfile) throw new AppError('User profile not found', 404);
+
+  const canView = canViewPrivateContent(targetProfile, currentUserId);
+  if (!canView) throw new AppError('You are not authorized to view posts from this user', 403);
+
+  const limit = parseInt(req.query.limit) || 12;
+  const cursor = req.query.cursor;
+
+  const { results: posts, nextCursor } = await paginateCursor({
+    model: Post,
+    filter: { user: targetUserId },
+    cursor,
+    limit,
+    populate: [
+      { path: 'user', select: 'username' },
+      { path: 'tags', select: 'username' },
+    ],
+  });
+
+  res.status(200).json({
+    count: posts.length,
+    nextCursor,
+    posts,
+  });
+};
+
+exports.getMyPosts = async (req, res) => {
+  const limit = parseInt(req.query.limit) || 12;
+  const cursor = req.query.cursor;
+
+  const { results: posts, nextCursor } = await paginateCursor({
+    model: Post,
+    filter: { user: req.user._id },
+    cursor,
+    limit,
+    populate: [{ path: 'tags', select: 'username' }],
+  });
+
+  res.status(200).json({
+    count: posts.length,
+    nextCursor,
+    posts,
+  });
+};
+
+
 
 // @desc    Get all posts (explore/feed)
 // @route   GET /api/posts
@@ -146,51 +200,6 @@ exports.getPostById = async (req, res) => {
 //   res.status(200).json({ success: true, count: posts.length, data: posts });
 // });
 
-// // @desc    Get a post by ID
-// // @route   GET /api/posts/:id
-// // @access  Public
-// exports.getPostById = asyncHandler(async (req, res) => {
-//   const post = await Post.findById(req.params.id)
-//     .populate('user', 'username profilePic')
-//     .populate('tags', 'username profilePic');
-
-//   if (!post) throw new AppError('Post not found', 404);
-
-//   res.status(200).json({ success: true, data: post });
-// });
-
-// // @desc    Update a post
-// // @route   PUT /api/posts/:id
-// // @access  Private
-// exports.updatePost = asyncHandler(async (req, res) => {
-//   const post = await Post.findById(req.params.id);
-//   if (!post) throw new AppError('Post not found', 404);
-//   if (!post.user.equals(req.user._id)) throw new AppError('Unauthorized', 403);
-
-//   const updates = ['content', 'media', 'tags', 'hashtags', 'location'];
-//   updates.forEach((field) => {
-//     if (req.body[field] !== undefined) {
-//       post[field] = req.body[field];
-//     }
-//   });
-
-//   await post.save();
-
-//   res.status(200).json({ success: true, data: post });
-// });
-
-// // @desc    Delete a post
-// // @route   DELETE /api/posts/:id
-// // @access  Private
-// exports.deletePost = asyncHandler(async (req, res) => {
-//   const post = await Post.findById(req.params.id);
-//   if (!post) throw new AppError('Post not found', 404);
-//   if (!post.user.equals(req.user._id)) throw new AppError('Unauthorized', 403);
-
-//   await post.deleteOne();
-
-//   res.status(200).json({ success: true, message: 'Post deleted' });
-// });
 
 // // @desc    Like or Unlike a post
 // // @route   PUT /api/posts/:id/like
