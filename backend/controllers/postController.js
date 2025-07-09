@@ -6,9 +6,11 @@ const Hashtag = require('../models/Hashtag');
 const Profile = require('../models/Profile');
 const paginateCursor = require('../utils/paginateCursor');
 
-// @desc    Create a new post
-// @route   POST /api/posts
-// @access  Private
+/**
+ * @desc    Create a new post with optional media (images/videos)
+ * @route   POST /api/posts
+ * @access  Private
+ */
 exports.createPost = async (req, res) => {
   const { content, hashtags, tags, location } = req.body;
   const userId = req.user._id;
@@ -50,7 +52,7 @@ exports.createPost = async (req, res) => {
   const newPost = new Post({
     user: userId,
     content,
-    hashtags,
+    hashtags: processedHashtags,
     tags,
     location,
     media: mediaArray,
@@ -62,19 +64,26 @@ exports.createPost = async (req, res) => {
 };
 
 
+/**
+ * @desc    Update a post by ID
+ * @route   PATCH /api/posts/:postId
+ * @access  Private
+ */
 exports.editPost = async (req, res) => {
   const userId = req.user._id;
   const { postId } = req.params;
-  const { content } = req.body;
+  let { content } = req.body;
 
   if (!content || content.trim() === '') {
     throw new AppError('Content is required to update', 400);
   }
 
+  content = content.trim();
+
   const updatedPost = await Post.findOneAndUpdate(
     { _id: postId, user: userId },
     { content },
-    { new: true } // return the updated post
+    { new: true }
   );
 
   if (!updatedPost) {
@@ -82,12 +91,18 @@ exports.editPost = async (req, res) => {
   }
 
   res.status(200).json({
+    success: true,
     message: 'Post content updated successfully',
-    post: updatedPost,
+    data: { post: updatedPost },
   });
 };
 
 
+/**
+ * @desc    Delete a post by ID (only by the owner)
+ * @route   DELETE /api/posts/:postId
+ * @access  Private
+ */
 exports.deletePost = async (req, res) => {
   const userId = req.user._id;
   const { postId } = req.params;
@@ -106,7 +121,11 @@ exports.deletePost = async (req, res) => {
   });
 };
 
-
+/**
+ * @desc    Get a single post by its ID
+ * @route   GET /api/posts/:postId
+ * @access  Private
+ */
 exports.getPostById = async (req, res) => {
   const { postId } = req.params;
   const currentUserId = req.user._id; // may be null if not logged in
@@ -136,6 +155,11 @@ exports.getPostById = async (req, res) => {
 };
 
 
+/**
+ * @desc    Get all posts from a specific user by their user ID
+ * @route   GET /api/posts/user/:userId
+ * @access  Private
+ */
 exports.getPostsByUser = async (req, res) => {
   const targetUserId = req.params.userId;
   const currentUserId = req.user?._id || null;
@@ -167,6 +191,11 @@ exports.getPostsByUser = async (req, res) => {
   });
 };
 
+/**
+ * @desc    Get all posts created by the currently logged-in user
+ * @route   GET /api/posts/me
+ * @access  Private
+ */
 exports.getMyPosts = async (req, res) => {
   const limit = parseInt(req.query.limit) || 12;
   const cursor = req.query.cursor;
@@ -186,6 +215,12 @@ exports.getMyPosts = async (req, res) => {
   });
 };
 
+
+/**
+ * @desc    Like a post by ID
+ * @route   POST /api/posts/:postId/like
+ * @access  Private
+ */
 exports.likePost = async (req, res) => {
   const userId = req.user._id;
   const { postId } = req.params;
@@ -219,6 +254,11 @@ exports.likePost = async (req, res) => {
   res.status(200).json({ success: true, message: 'Post liked' });
 };
 
+/**
+ * @desc    Unlike a previously liked post by ID
+ * @route   DELETE /api/posts/:postId/unlike
+ * @access  Private
+ */
 exports.unlikePost = async (req, res) => {
   const userId = req.user._id;
   const { postId } = req.params;
@@ -265,6 +305,11 @@ exports.unlikePost = async (req, res) => {
 //   res.status(200).json({ success: true, count: posts.length, data: posts });
 // });
 
+/**
+ * @desc    Toggle save or unsave a post for the current user
+ * @route   PUT /api/posts/:postId/save
+ * @access  Private
+ */
 exports.toggleSavePost = async (req, res) => {
   const userId = req.user._id;
   const { postId } = req.params;
@@ -306,6 +351,12 @@ exports.toggleSavePost = async (req, res) => {
   });
 };
 
+
+/**
+ * @desc    Get all posts saved by the currently logged-in user
+ * @route   GET /api/posts/saved/me
+ * @access  Private
+ */
 exports.getSavedPosts = async (req, res) => {
   const userId = req.user._id;
 
@@ -337,6 +388,11 @@ exports.getSavedPosts = async (req, res) => {
 };
 
 
+/**
+ * @desc    Get all posts with a specific hashtag
+ * @route   GET /api/posts/hashtag/:tag
+ * @access  Private
+ */
 exports.getPostsByHashtag = async (req, res) => {
   const { tag } = req.params; // hashtag without #
   const limit = parseInt(req.query.limit) || 12;
