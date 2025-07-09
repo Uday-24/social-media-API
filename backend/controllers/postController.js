@@ -186,7 +186,72 @@ exports.getMyPosts = async (req, res) => {
   });
 };
 
+exports.likePost = async (req, res) => {
+  const userId = req.user._id;
+  const { postId } = req.params;
 
+  // 1. Find the post
+  const post = await Post.findById(postId);
+  if (!post) {
+    throw new AppError('Post not found', 404);
+  }
+
+  // 2. Fetch the post owner's profile (including isPrivate and followers)
+  const targetProfile = await Profile.findOne({ user: post.user }).select('isPrivate followers user');
+  if (!targetProfile) {
+    throw new AppError('Post owner profile not found', 404);
+  }
+
+  // 3. Check if current user can view/like the post
+  const canView = canViewPrivateContent(targetProfile, userId);
+  if (!canView) {
+    throw new AppError('You are not allowed to interact with this post', 403);
+  }
+
+  // 4. Like logic
+  if (post.likes.includes(userId)) {
+    return res.status(400).json({ success: false, message: 'Post already liked' });
+  }
+
+  post.likes.push(userId);
+  await post.save();
+
+  res.status(200).json({ success: true, message: 'Post liked' });
+};
+
+exports.unlikePost = async (req, res) => {
+  const userId = req.user._id;
+  const { postId } = req.params;
+
+  // 1. Find the post
+  const post = await Post.findById(postId);
+  if (!post) {
+    throw new AppError('Post not found', 404);
+  }
+
+  // 2. Fetch the post owner's profile
+  const targetProfile = await Profile.findOne({ user: post.user }).select('isPrivate followers user');
+  if (!targetProfile) {
+    throw new AppError('Post owner profile not found', 404);
+  }
+
+  // 3. Privacy check
+  const canView = canViewPrivateContent(targetProfile, userId);
+  if (!canView) {
+    throw new AppError('You are not allowed to interact with this post', 403);
+  }
+
+  // 4. Unlike logic
+  const index = post.likes.indexOf(userId);
+  if (index === -1) {
+    return res.status(400).json({ success: false, message: 'Post not liked yet' });
+  }
+
+  post.likes.splice(index, 1);
+  await post.save();
+
+  res.status(200).json({ success: true, message: 'Post unliked' });
+};
 
 // @desc    Get all posts (explore/feed)
 // @route   GET /api/posts
@@ -200,80 +265,102 @@ exports.getMyPosts = async (req, res) => {
 //   res.status(200).json({ success: true, count: posts.length, data: posts });
 // });
 
+exports.toggleSavePost = async (req, res) => {
+  const userId = req.user._id;
+  const { postId } = req.params;
 
-// // @desc    Like or Unlike a post
-// // @route   PUT /api/posts/:id/like
-// // @access  Private
-// exports.toggleLike = asyncHandler(async (req, res) => {
-//   const post = await Post.findById(req.params.id);
-//   if (!post) throw new AppError('Post not found', 404);
+  // 1. Fetch the post
+  const post = await Post.findById(postId);
+  if (!post) throw new AppError('Post not found', 404);
 
-//   const userId = req.user._id;
-//   const alreadyLiked = post.likes.includes(userId);
+  // 2. Get the post owner's profile
+  const postOwnerProfile = await Profile.findOne({ user: post.user }).select('isPrivate followers user');
+  if (!postOwnerProfile) throw new AppError('Post owner profile not found', 404);
 
-//   if (alreadyLiked) {
-//     post.likes.pull(userId);
-//   } else {
-//     post.likes.push(userId);
-//   }
+  // 3. Check privacy
+  const canView = canViewPrivateContent(postOwnerProfile, userId);
+  if (!canView) throw new AppError('You are not allowed to save this post', 403);
 
-//   await post.save();
+  // 4. Fetch the current user's profile
+  const profile = await Profile.findOne({ user: userId });
+  if (!profile) throw new AppError('Your profile not found', 404);
 
-//   res.status(200).json({ success: true, liked: !alreadyLiked });
-// });
+  // 5. Toggle logic
+  const alreadySaved = profile.savedPosts.includes(postId);
+  let action;
 
-// // @desc    Save or Unsave post
-// // @route   PUT /api/posts/:id/save
-// // @access  Private
-// exports.toggleSave = asyncHandler(async (req, res) => {
-//   const user = await User.findById(req.user._id);
-//   if (!user) throw new AppError('User not found', 404);
+  if (alreadySaved) {
+    profile.savedPosts.pull(postId);
+    action = 'unsaved';
+  } else {
+    profile.savedPosts.push(postId);
+    action = 'saved';
+  }
 
-//   const postId = req.params.id;
-//   const alreadySaved = user.savedPosts.includes(postId);
+  await profile.save();
 
-//   if (alreadySaved) {
-//     user.savedPosts.pull(postId);
-//   } else {
-//     user.savedPosts.push(postId);
-//   }
+  res.status(200).json({
+    success: true,
+    message: `Post ${action} successfully.`,
+    savedPosts: profile.savedPosts,
+  });
+};
 
-//   await user.save();
+exports.getSavedPosts = async (req, res) => {
+  const userId = req.user._id;
 
-//   res.status(200).json({ success: true, saved: !alreadySaved });
-// });
+  // 1. Find user profile
+  const profile = await Profile.findOne({ user: userId }).select('savedPosts');
+  if (!profile) throw new AppError('Profile not found', 404);
 
-// // @desc    Get all saved posts of the logged-in user
-// // @route   GET /api/posts/saved/me
-// // @access  Private
-// exports.getSavedPosts = asyncHandler(async (req, res) => {
-//   const user = await User.findById(req.user._id).populate({
-//     path: 'savedPosts',
-//     populate: { path: 'user', select: 'username profilePic' },
-//   });
+  const limit = parseInt(req.query.limit) || 12;
+  const cursor = req.query.cursor;
 
-//   res.status(200).json({ success: true, data: user.savedPosts });
-// });
+  // 2. Paginate over saved post IDs
+  const { results: posts, nextCursor } = await paginateCursor({
+    model: Post,
+    filter: { _id: { $in: profile.savedPosts } },
+    cursor,
+    limit,
+    sortField: 'createdAt', // default used if not specified
+    populate: [
+      { path: 'user', select: 'username avatar' },
+      { path: 'tags', select: 'username' },
+    ],
+  });
 
-// // @desc    Get posts by a specific user
-// // @route   GET /api/posts/user/:userId
-// // @access  Public
-// exports.getPostsByUser = asyncHandler(async (req, res) => {
-//   const posts = await Post.find({ user: req.params.userId })
-//     .populate('user', 'username profilePic')
-//     .sort({ createdAt: -1 });
+  res.status(200).json({
+    count: posts.length,
+    nextCursor,
+    posts,
+  });
+};
 
-//   res.status(200).json({ success: true, data: posts });
-// });
 
-// // @desc    Get posts by hashtag
-// // @route   GET /api/posts/hashtag/:tag
-// // @access  Public
-// exports.getPostsByHashtag = asyncHandler(async (req, res) => {
-//   const tag = req.params.tag;
-//   const posts = await Post.find({ hashtags: tag })
-//     .populate('user', 'username profilePic')
-//     .sort({ createdAt: -1 });
+exports.getPostsByHashtag = async (req, res) => {
+  const { tag } = req.params; // hashtag without #
+  const limit = parseInt(req.query.limit) || 12;
+  const cursor = req.query.cursor;
 
-//   res.status(200).json({ success: true, data: posts });
-// });
+  // Sanitize and lowercase the hashtag (optional)
+  const cleanTag = tag.trim().toLowerCase();
+
+  // Fetch posts containing this hashtag
+  const { results: posts, nextCursor } = await paginateCursor({
+    model: Post,
+    filter: { hashtags: cleanTag },
+    cursor,
+    limit,
+    sortField: 'createdAt',
+    populate: [
+      { path: 'user', select: 'username avatar' },
+      { path: 'tags', select: 'username' },
+    ],
+  });
+
+  res.status(200).json({
+    count: posts.length,
+    nextCursor,
+    posts,
+  });
+};

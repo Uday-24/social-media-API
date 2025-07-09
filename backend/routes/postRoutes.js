@@ -4,7 +4,7 @@ const upload = require('../utils/multer');
 const protect = require('../middlewares/authMiddleware');
 const { postValidation } = require('../validators/postValidation');
 const validateRequest = require('../middlewares/validateRequest');
-const { createPost, editPost, deletePost, getPostById, getPostsByUser, getMyPosts } = require('../controllers/postController');
+const { createPost, editPost, deletePost, getPostById, getPostsByUser, getMyPosts, likePost, unlikePost, toggleSavePost, getSavedPosts, getPostsByHashtag } = require('../controllers/postController');
 
 // Create a new post
 router.post('/', protect, upload.array('media', 10), postValidation, validateRequest, createPost);
@@ -24,23 +24,19 @@ router.get('/user/:userId', protect, getPostsByUser);
 // Get all my posts
 router.get('/me', protect, getMyPosts);
 
+// // Like post
+router.post('/:postId/like', protect, likePost);
 
+// // Like post
+router.delete('/:postId/unlike', protect, unlikePost);
 
+// Save / Unsave post
+router.put('/:postId/save', protect, toggleSavePost);
 
+// Get posts by hashtag
+router.get('/hashtag/:tag', protect, getPostsByHashtag);
 
-// // Like / Unlike post
-// router.put('/:id/like', protect, postController.toggleLike);
-
-// // Save / Unsave post
-// router.put('/:id/save', protect, postController.toggleSave);
-
-// // Get posts of a specific user
-// router.get('/user/:userId', postController.getPostsByUser);
-
-// // Get posts by hashtag
-// router.get('/hashtag/:tag', postController.getPostsByHashtag);
-
-// // Get all saved posts of current user
-// router.get('/saved/me', protect, postController.getSavedPosts);
+// Get all saved posts of current user
+router.get('/saved/me', protect, getSavedPosts);
 
 module.exports = router;
