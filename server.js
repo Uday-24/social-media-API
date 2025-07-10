@@ -7,6 +7,7 @@ const userRoutes = require('./backend/routes/userRoutes');
 const profileRoutes = require('./backend/routes/profileRoutes');
 const followRoutes = require('./backend/routes/followRoutes');
 const postRoutes = require('./backend/routes/postRoutes');
+const commentRoutes = require('./backend/routes/commentRoutes');
 const errorHandler = require('./backend/middlewares/errorMiddleware');
 
 dotenv.config();
@@ -23,6 +24,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/api/follow', followRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/comments', commentRoutes);
 app.use(errorHandler);
 
 // Start server after DB connection
